@@ -36,16 +36,17 @@ app.add_middleware(
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
 # ===================== 3) Load NEVO Excel =====================
-# 优先读取当前脚本目录下的 NEVO 文件
-local_path = os.path.join(os.path.dirname(__file__), "NEVO2023_database.xlsx")
+base_dir = os.path.dirname(os.path.abspath(__file__))
 
-# 如果找不到，再回退用你本地的路径（用于开发时调试）
-fallback_path = r"D:\Courseware\tue\FMP\Chatbot\chatbot-backend\NEVO2023_database.xlsx"
+# 拼接出 Excel 文件路径
+NEVO_FILE = os.path.join(base_dir, "NEVO2023_database.xlsx")
 
-# 自动选择可用的路径
-NEVO_FILE = local_path if os.path.exists(local_path) else fallback_path
-nevo_df = pd.read_excel(NEVO_FILE)
-nevo_df.columns = [c.strip() for c in nevo_df.columns]
+# 尝试读取
+try:
+    nevo_df = pd.read_excel(NEVO_FILE)
+    nevo_df.columns = [c.strip() for c in nevo_df.columns]
+except FileNotFoundError as e:
+    raise RuntimeError(f"未找到 NEVO Excel 文件，请确保 'NEVO2023_database.xlsx' 与 main.py 位于同一目录下。") from e
 
 # Clean food names
 nevo_df["Food name"] = nevo_df["Food name"].astype(str).str.replace(",", "").str.strip()
