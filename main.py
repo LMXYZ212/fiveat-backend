@@ -9,6 +9,7 @@ import torch
 import requests
 import subprocess
 import tempfile
+import os
 
 
 # ===================== 1) Initialize FastAPI + CORS =====================
@@ -35,7 +36,14 @@ app.add_middleware(
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
 # ===================== 3) Load NEVO Excel =====================
-NEVO_FILE = r"D:\Courseware\tue\FMP\Chatbot\chatbot-backend\NEVO2023_database.xlsx"
+# 优先读取当前脚本目录下的 NEVO 文件
+local_path = os.path.join(os.path.dirname(__file__), "NEVO2023_database.xlsx")
+
+# 如果找不到，再回退用你本地的路径（用于开发时调试）
+fallback_path = r"D:\Courseware\tue\FMP\Chatbot\chatbot-backend\NEVO2023_database.xlsx"
+
+# 自动选择可用的路径
+NEVO_FILE = local_path if os.path.exists(local_path) else fallback_path
 nevo_df = pd.read_excel(NEVO_FILE)
 nevo_df.columns = [c.strip() for c in nevo_df.columns]
 
