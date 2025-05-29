@@ -11,6 +11,10 @@ import subprocess
 import tempfile
 import os
 
+from fastapi import UploadFile, Form
+import requests
+import base64
+
 
 # ===================== 1) Initialize FastAPI + CORS =====================
 app = FastAPI(
@@ -220,9 +224,7 @@ def text_parse(input: TextInput):
 
 
 # ===================== 8) New: /api/image (Google Vision) =====================
-from fastapi import UploadFile, Form
-import requests
-import base64
+
 
 @app.post("/api/image")
 async def recognize_from_image(file: UploadFile):
@@ -304,7 +306,16 @@ async def recognize_from_image(file: UploadFile):
             })
         sentence = " and ".join(top_labels) if top_labels else "unknown"
         result = text_parse(TextInput(text=sentence))
-        return { "parsedItems": result.get("foodItems", []) }
+
+        # 打印 Google Vision 原始标签，方便调试
+        print("📷 top_labels:", top_labels)
+
+        sentence = " and ".join(top_labels) if top_labels else "unknown"
+        result   = text_parse(TextInput(text=sentence))
+
+        # 打印经过 text_parse 后的解析结果
+        print("📷 parsedItems:", result)
+        return result 
 
     except Exception as e:
         import traceback
@@ -367,7 +378,7 @@ async def recognize_from_audio(file: UploadFile = File(...)):
         subprocess.run(["ffmpeg", "-i", input_path, output_path], check=True)
 
         # 调用 Whisper 接口识别文字
-        openai_api_key = "sk-..."
+        openai_api_key = "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"
         with open(output_path, "rb") as audio_file:
             resp = requests.post(
                 "https://api.openai.com/v1/audio/transcriptions",
