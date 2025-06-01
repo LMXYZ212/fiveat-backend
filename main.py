@@ -593,24 +593,21 @@ from pydantic import BaseModel
 import requests
 import traceback
 
-class TextInput(BaseModel):
-    text: str
+import magic
 
-# 支持的 MIME 类型与文件扩展名映射
 SUPPORTED_MIME_MAP = {
     "audio/webm": "webm",
-    "video/webm": "webm",
     "audio/mpeg": "mp3",
     "audio/mp3": "mp3",
     "audio/mp4": "mp4",
-    "video/mp4": "mp4",
-    "audio/aac": "aac",
     "audio/x-m4a": "m4a",
     "audio/m4a": "m4a",
+    "video/mp4": "mp4",
+    "audio/aac": "m4a",
     "audio/wav": "wav",
-    "audio/x-wav": "wav",
     "audio/ogg": "ogg",
-    "audio/oga": "oga",
+    "audio/oga": "ogg",
+    "audio/mpga": "mp3",
     "audio/flac": "flac"
 }
 
@@ -625,26 +622,27 @@ async def recognize_from_audio(file: UploadFile = File(...)):
         if len(audio_bytes) > 2 * 1024 * 1024:
             raise HTTPException(status_code=413, detail="音频文件过大（建议小于2MB）")
 
-        real_mime = file.content_type
-        print("📦 实际 MIME 类型:", real_mime)
+        # 1️⃣ magic 检测真实 MIME 类型
+        mime = magic.Magic(mime=True)
+        real_mime = mime.from_buffer(audio_bytes[:2048])
+        print("📦 magic 检测 MIME 类型:", real_mime)
 
-        # 根据 MIME 类型判断文件扩展名
-        if real_mime not in SUPPORTED_MIME_MAP:
-            print(f"⚠️ 未知 MIME 类型 {real_mime}，强制")
-            file_ext = "webm"
-            filename = "audio.webm"
-            whisper_mime = "audio/webm"
-        else:
+        if real_mime in SUPPORTED_MIME_MAP:
             file_ext = SUPPORTED_MIME_MAP[real_mime]
             filename = f"audio.{file_ext}"
             whisper_mime = f"audio/{file_ext}"
+        else:
+            # 强制 fallback 为 webm
+            print(f"⚠️ 未知 MIME 类型 {real_mime}，强制设为 webm")
+            filename = "audio.webm"
+            whisper_mime = "audio/webm"
 
-        # 发送 Whisper 请求
-        openai_api_key = "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"  # 🔐 替换为你自己的 key
+        # 2️⃣ Whisper 请求
+        openai_api_key = "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"  # 替换为你的 key
         resp = requests.post(
             "https://api.openai.com/v1/audio/transcriptions",
             headers={"Authorization": f"Bearer {openai_api_key}"},
-            files={"file": (filename, audio_bytes, real_mime)},
+            files={"file": (filename, audio_bytes, whisper_mime)},
             data={"model": "whisper-1", "language": "en"},
             timeout=15
         )
