@@ -524,7 +524,6 @@ async def recognize_from_image(file: UploadFile):
 from fastapi import UploadFile, File, HTTPException
 import requests
 import traceback
-import magic
 from pydantic import BaseModel
 
 class TextInput(BaseModel):
@@ -550,7 +549,7 @@ async def recognize_from_audio(file: UploadFile = File(...)):
             raise HTTPException(status_code=413, detail="音频文件过大（建议小于2MB）")
 
         # 2️⃣ 检测真实 MIME 类型
-        real_mime = magic.from_buffer(audio_bytes, mime=True)
+        real_mime = file.content_type
         print("📦 实际 MIME 类型:", real_mime)
 
         # 3️⃣ 设置上传给 Whisper 的 MIME 和文件名
