@@ -195,6 +195,8 @@ def parse_text(input: TextInput):
 def text_parse(input: TextInput):
     items = extract_food_items_simple(input.text)
     output = []
+    seen = set()
+
     for it in items:
         name = it["foodName"]
         qty = it["quantity"]
@@ -210,8 +212,15 @@ def text_parse(input: TextInput):
                 category = row.get("WheelGroup")
                 est_weight = 100.0
 
+        final_name = matched if matched else name
+
+        # 去重逻辑：跳过已经加入过的 foodName
+        if final_name in seen:
+            continue
+        seen.add(final_name)
+
         output.append({
-            "foodName": matched if matched else name,
+            "foodName": final_name,
             "quantity": qty,
             "unit": unit,
             "estimatedCategory": category,
@@ -226,96 +235,156 @@ def text_parse(input: TextInput):
 # ===================== 8) New: /api/image (Google Vision) =====================
 
 
+# @app.post("/api/image")
+# async def recognize_from_image(file: UploadFile):
+#     """
+#     1) Read uploaded image
+#     2) Send to Google Cloud Vision API -> labelAnnotations
+#     3) Convert top labels to "food1 and food2"
+#     4) Reuse parse_text logic -> final foodItems
+#     """
+#     try:
+#         # 1) read file content
+#         contents = await file.read()
+#         encoded = base64.b64encode(contents).decode('utf-8')
+
+#         # 2) call Google Vision
+#         # replace with your real API key
+#         google_vision_api_key = "AIzaSyBRa0fP7e27Kz5-jHWegOA6EYZullXlvMg"
+#         url = f"https://vision.googleapis.com/v1/images:annotate?key=AIzaSyBRa0fP7e27Kz5-jHWegOA6EYZullXlvMg"
+#         request_body = {
+#           "requests": [
+#             {
+#               "image": {"content": encoded},
+#               "features": [{"type": "LABEL_DETECTION", "maxResults": 5}]
+#             }
+#           ]
+#         }
+#         resp = requests.post(url, json=request_body)
+#         data = resp.json()
+#         label_annotations = data.get("responses",[{}])[0].get("labelAnnotations", [])
+#         # Just get top 2 or 3
+#         top_labels = [ann["description"] for ann in label_annotations[:3]]
+
+#         # 3) create a textual sentence, e.g. "apple and pizza"
+#         # (User must manually set quantity => or default 1.0)
+#         if top_labels:
+#             sentence = " and ".join(top_labels)
+#         else:
+#             sentence = "unknown"
+
+#         # 4) reuse parse_text logic
+#         # but we just do: for each label => quantity=1.0 => let user fix
+#         # or we can do a single string => "apple and pizza" => parse
+#         # best approach is to parse => but that might fail if no numeric
+#         # So let's just return them as if partial parse
+#         # We'll do direct approach: no quantity
+#         items = []
+#         for lab in top_labels:
+#             items.append({"foodName": lab.lower(), "quantity": 1.0})
+
+#         # 5) do partial matching with NEVO
+#         output = []
+#         for it in items:
+#             fName, qty = it["foodName"], it["quantity"]
+#             matched = vector_match_food(fName)
+#             if matched is None:
+#                 output.append({
+#                     "foodName": fName,
+#                     "quantity": qty,
+#                     "NEVO_matched": None,
+#                     "error": "No semantic match found in NEVO"
+#                 })
+#                 continue
+#             matched_row = nevo_df[nevo_df["CleanName"] == matched]
+#             if matched_row.empty:
+#                 output.append({
+#                     "foodName": fName,
+#                     "quantity": qty,
+#                     "NEVO_matched": matched,
+#                     "error": "Matched name not found in NEVO DB"
+#                 })
+#                 continue
+#             row = matched_row.iloc[0]
+#             info = get_nutrition_info(row, qty)
+#             output.append({
+#                 "foodName": fName,
+#                 "quantity": qty,
+#                 "NEVO_matched": row["Food name"],
+#                 **info
+#             })
+#         sentence = " and ".join(top_labels) if top_labels else "unknown"
+#         result = text_parse(TextInput(text=sentence))
+
+#         # 打印 Google Vision 原始标签，方便调试
+#         print("📷 top_labels:", top_labels)
+
+#         sentence = " and ".join(top_labels) if top_labels else "unknown"
+#         result   = text_parse(TextInput(text=sentence))
+
+#         # 打印经过 text_parse 后的解析结果
+#         print("📷 parsedItems:", result)
+#         return result 
+
+#     except Exception as e:
+#         import traceback
+#         traceback.print_exc()
+#         raise HTTPException(status_code=400, detail=str(e))
+from fastapi import UploadFile, HTTPException
+import base64
+import requests
+from pydantic import BaseModel
+
+class TextInput(BaseModel):
+    text: str
+
 @app.post("/api/image")
 async def recognize_from_image(file: UploadFile):
-    """
-    1) Read uploaded image
-    2) Send to Google Cloud Vision API -> labelAnnotations
-    3) Convert top labels to "food1 and food2"
-    4) Reuse parse_text logic -> final foodItems
-    """
     try:
-        # 1) read file content
+        # Step 1: 读取上传图像并编码
         contents = await file.read()
-        encoded = base64.b64encode(contents).decode('utf-8')
+        encoded = base64.b64encode(contents).decode("utf-8")
 
-        # 2) call Google Vision
-        # replace with your real API key
-        google_vision_api_key = "AIzaSyBRa0fP7e27Kz5-jHWegOA6EYZullXlvMg"
-        url = f"https://vision.googleapis.com/v1/images:annotate?key=AIzaSyBRa0fP7e27Kz5-jHWegOA6EYZullXlvMg"
+        # Step 2: 调用 Google Cloud Vision API（最多返回5个标签）
+        url = "https://vision.googleapis.com/v1/images:annotate?key=AIzaSyBRa0fP7e27Kz5-jHWegOA6EYZullXlvMg"
         request_body = {
-          "requests": [
-            {
-              "image": {"content": encoded},
-              "features": [{"type": "LABEL_DETECTION", "maxResults": 5}]
-            }
-          ]
+            "requests": [{
+                "image": {"content": encoded},
+                "features": [{"type": "LABEL_DETECTION", "maxResults": 5}]
+            }]
         }
         resp = requests.post(url, json=request_body)
         data = resp.json()
-        label_annotations = data.get("responses",[{}])[0].get("labelAnnotations", [])
-        # Just get top 2 or 3
-        top_labels = [ann["description"] for ann in label_annotations[:3]]
 
-        # 3) create a textual sentence, e.g. "apple and pizza"
-        # (User must manually set quantity => or default 1.0)
-        if top_labels:
-            sentence = " and ".join(top_labels)
+        # Step 3: 提取前5个标签
+        all_labels = [
+            ann["description"]
+            for ann in data.get("responses", [{}])[0].get("labelAnnotations", [])[:5]
+        ]
+
+        # Step 4: 过滤掉不具体的标签
+        blacklist = {"cooking", "food", "produce", "processed", "cup", "tableware", "drinkware", "ingredient"}
+        top_labels = [label for label in all_labels if label.lower() not in blacklist]
+
+        sentence = " ".join(top_labels) if top_labels else "unknown"
+
+        print("📷 原始标签:", all_labels)
+        print("📷 过滤后标签:", top_labels)
+        print("📷 处理句子:", sentence)
+
+        # Step 5: 用 parse_text 精确匹配
+        parsed = parse_text(TextInput(text=sentence))
+        parsed_items = parsed.get("parsedItems", [])
+
+        # Step 6: 提取匹配成功项
+        matched_items = [item for item in parsed_items if item.get("estimatedCategory") is not None]
+
+        if matched_items:
+            print("✅ 精准匹配成功，返回匹配项")
+            return {"parsedItems": matched_items}
         else:
-            sentence = "unknown"
-
-        # 4) reuse parse_text logic
-        # but we just do: for each label => quantity=1.0 => let user fix
-        # or we can do a single string => "apple and pizza" => parse
-        # best approach is to parse => but that might fail if no numeric
-        # So let's just return them as if partial parse
-        # We'll do direct approach: no quantity
-        items = []
-        for lab in top_labels:
-            items.append({"foodName": lab.lower(), "quantity": 1.0})
-
-        # 5) do partial matching with NEVO
-        output = []
-        for it in items:
-            fName, qty = it["foodName"], it["quantity"]
-            matched = vector_match_food(fName)
-            if matched is None:
-                output.append({
-                    "foodName": fName,
-                    "quantity": qty,
-                    "NEVO_matched": None,
-                    "error": "No semantic match found in NEVO"
-                })
-                continue
-            matched_row = nevo_df[nevo_df["CleanName"] == matched]
-            if matched_row.empty:
-                output.append({
-                    "foodName": fName,
-                    "quantity": qty,
-                    "NEVO_matched": matched,
-                    "error": "Matched name not found in NEVO DB"
-                })
-                continue
-            row = matched_row.iloc[0]
-            info = get_nutrition_info(row, qty)
-            output.append({
-                "foodName": fName,
-                "quantity": qty,
-                "NEVO_matched": row["Food name"],
-                **info
-            })
-        sentence = " and ".join(top_labels) if top_labels else "unknown"
-        result = text_parse(TextInput(text=sentence))
-
-        # 打印 Google Vision 原始标签，方便调试
-        print("📷 top_labels:", top_labels)
-
-        sentence = " and ".join(top_labels) if top_labels else "unknown"
-        result   = text_parse(TextInput(text=sentence))
-
-        # 打印经过 text_parse 后的解析结果
-        print("📷 parsedItems:", result)
-        return result 
+            print("⚠️ 全部未匹配，使用 text_parse fallback")
+            return text_parse(TextInput(text=sentence))
 
     except Exception as e:
         import traceback
@@ -405,42 +474,104 @@ async def recognize_from_image(file: UploadFile):
 #         raise HTTPException(status_code=400, detail=str(e))
 
 # ===================== 9) New: /api/audio (Whisper 直接处理 .webm) =====================
+# from fastapi import UploadFile, File, HTTPException
+# import requests, traceback
+
+# @app.post("/api/audio")
+# async def recognize_from_audio(file: UploadFile = File(...)):
+#     """
+#     1) 读取前端上传的 .webm 音频
+#     2) 直接上传给 OpenAI Whisper（Whisper 官方支持 webm）
+#     3) 将识别文本送入 text_parse，保持返回结构不变
+#     """
+#     try:
+#         # 1️⃣ 读取 bytes
+#         audio_bytes = await file.read()
+
+#         # 2️⃣ Whisper 语音转文字
+#         openai_api_key = (
+#             "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"
+#         )
+
+#         resp = requests.post(
+#             "https://api.openai.com/v1/audio/transcriptions",
+#             headers={"Authorization": f"Bearer {openai_api_key}"},
+#             files={
+#                 # filename 任意，MIME 必须 audio/webm
+#                 "file": ("audio.webm", audio_bytes, "audio/webm")
+#             },
+#             data={"model": "whisper-1", "language": "en"}
+#         )
+
+#         if resp.status_code != 200:
+#             raise HTTPException(status_code=resp.status_code, detail=resp.text)
+
+#         recognized_text = resp.json().get("text", "")
+#         print("[🎤 Whisper结果]", recognized_text)
+
+#         # 3️⃣ 轻量解析 → 返回 parsedItems，与原逻辑一致
+#         from pydantic import BaseModel
+#         class TextInput(BaseModel):
+#             text: str
+
+#         return text_parse(TextInput(text=recognized_text))
+
+#     except Exception as e:
+#         print("[❌ Whisper错误]:", e)
+#         traceback.print_exc()
+#         raise HTTPException(status_code=400, detail=str(e))
+
 from fastapi import UploadFile, File, HTTPException
 import requests, traceback
+import magic
 
 @app.post("/api/audio")
 async def recognize_from_audio(file: UploadFile = File(...)):
     """
-    1) 读取前端上传的 .webm 音频
-    2) 直接上传给 OpenAI Whisper（Whisper 官方支持 webm）
-    3) 将识别文本送入 text_parse，保持返回结构不变
+    不使用 ffmpeg 的兼容方案：
+    1. 读取上传的音频文件
+    2. 自动判断 MIME 类型（如 iPhone 为 audio/mp4）
+    3. 调整文件名和 MIME 类型传给 OpenAI Whisper
+    4. 返回 text_parse 的结构
     """
     try:
-        # 1️⃣ 读取 bytes
+        # 1️⃣ 读取音频内容
         audio_bytes = await file.read()
 
-        # 2️⃣ Whisper 语音转文字
-        openai_api_key = (
-            "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"
-        )
+        if len(audio_bytes) < 500:
+            raise HTTPException(status_code=400, detail="音频太短或无效")
 
+        # 2️⃣ 判断真实 MIME
+        real_mime = magic.from_buffer(audio_bytes, mime=True)
+        print("📦 实际 MIME:", real_mime)
+
+        # 3️⃣ 设置 filename 和 mime 给 Whisper
+        if real_mime in ["audio/mp4", "video/mp4", "audio/aac"]:
+            filename = "audio.mp4"
+            whisper_mime = "audio/mp4"
+        else:
+            filename = "audio.webm"
+            whisper_mime = "audio/webm"
+
+        # 4️⃣ Whisper 识别
+        openai_api_key = "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"  # 替换你的真实 API Key
         resp = requests.post(
             "https://api.openai.com/v1/audio/transcriptions",
             headers={"Authorization": f"Bearer {openai_api_key}"},
             files={
-                # filename 任意，MIME 必须 audio/webm
-                "file": ("audio.webm", audio_bytes, "audio/webm")
+                "file": (filename, audio_bytes, whisper_mime)
             },
             data={"model": "whisper-1", "language": "en"}
         )
 
         if resp.status_code != 200:
+            print("[❌ Whisper错误]:", resp.text)
             raise HTTPException(status_code=resp.status_code, detail=resp.text)
 
         recognized_text = resp.json().get("text", "")
         print("[🎤 Whisper结果]", recognized_text)
 
-        # 3️⃣ 轻量解析 → 返回 parsedItems，与原逻辑一致
+        # 5️⃣ 一致输出格式
         from pydantic import BaseModel
         class TextInput(BaseModel):
             text: str
