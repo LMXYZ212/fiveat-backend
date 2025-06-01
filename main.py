@@ -630,10 +630,10 @@ async def recognize_from_audio(file: UploadFile = File(...)):
 
         # 根据 MIME 类型判断文件扩展名
         if real_mime not in SUPPORTED_MIME_MAP:
-            print(f"⚠️ 未知 MIME 类型 {real_mime}，强制设为 m4a")
-            file_ext = "m4a"
-            filename = "audio.m4a"
-            whisper_mime = "audio/m4a"
+            print(f"⚠️ 未知 MIME 类型 {real_mime}，强制")
+            file_ext = "webm"
+            filename = "audio.webm"
+            whisper_mime = "audio/webm"
         else:
             file_ext = SUPPORTED_MIME_MAP[real_mime]
             filename = f"audio.{file_ext}"
