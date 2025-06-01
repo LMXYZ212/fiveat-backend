@@ -521,25 +521,102 @@ async def recognize_from_image(file: UploadFile):
 #         traceback.print_exc()
 #         raise HTTPException(status_code=400, detail=str(e))
 
+# from fastapi import UploadFile, File, HTTPException
+# import requests
+# import traceback
+# from pydantic import BaseModel
+
+# class TextInput(BaseModel):
+#     text: str
+
+# @app.post("/api/audio")
+# async def recognize_from_audio(file: UploadFile = File(...)):
+#     """
+#     多设备音频上传兼容接口（无 ffmpeg）：
+#     - 支持 .webm, .mp4, .m4a（iPhone）, .aac
+#     - 自动判断 MIME 类型
+#     - 发送至 OpenAI Whisper 进行识别
+#     - 返回 text_parse 的结构
+#     """
+#     try:
+#         # 1️⃣ 读取音频内容
+#         audio_bytes = await file.read()
+#         print("📦 文件大小:", len(audio_bytes), "bytes")
+
+#         if len(audio_bytes) < 500:
+#             raise HTTPException(status_code=400, detail="音频太短或无效")
+#         if len(audio_bytes) > 2 * 1024 * 1024:
+#             raise HTTPException(status_code=413, detail="音频文件过大（建议小于2MB）")
+
+#         # 2️⃣ 检测真实 MIME 类型
+#         real_mime = file.content_type
+#         print("📦 实际 MIME 类型:", real_mime)
+
+#         # 3️⃣ 设置上传给 Whisper 的 MIME 和文件名
+#         if real_mime in ["audio/mp4", "video/mp4", "audio/aac", "audio/x-m4a", "audio/m4a"]:
+#             filename = "audio.m4a"
+#             whisper_mime = "audio/m4a"
+#         else:
+#             filename = "audio.webm"
+#             whisper_mime = "audio/webm"
+
+#         # 4️⃣ Whisper API 请求
+#         openai_api_key = "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"  # ❗请替换为你的有效 OpenAI API key
+#         resp = requests.post(
+#             "https://api.openai.com/v1/audio/transcriptions",
+#             headers={"Authorization": f"Bearer {openai_api_key}"},
+#             files={"file": (filename, audio_bytes, whisper_mime)},
+#             data={"model": "whisper-1", "language": "en"},
+#             timeout=15
+#         )
+
+#         print("📡 Whisper响应码:", resp.status_code)
+#         print("📡 Whisper响应体:", resp.text)
+
+#         if resp.status_code != 200:
+#             raise HTTPException(status_code=resp.status_code, detail=resp.text)
+
+#         # 5️⃣ 提取 Whisper 返回的文本
+#         recognized_text = resp.json().get("text", "")
+#         print("[🎤 Whisper识别结果]:", recognized_text)
+
+#         # 6️⃣ 调用 text_parse 返回结构
+#         return text_parse(TextInput(text=recognized_text))
+
+#     except Exception as e:
+#         print("[❌ Whisper处理异常]:", e)
+#         traceback.print_exc()
+#         raise HTTPException(status_code=400, detail=str(e))
+
 from fastapi import UploadFile, File, HTTPException
+from pydantic import BaseModel
 import requests
 import traceback
-from pydantic import BaseModel
 
 class TextInput(BaseModel):
     text: str
 
+# 支持的 MIME 类型与文件扩展名映射
+SUPPORTED_MIME_MAP = {
+    "audio/webm": "webm",
+    "video/webm": "webm",
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+    "audio/mp4": "mp4",
+    "video/mp4": "mp4",
+    "audio/aac": "aac",
+    "audio/x-m4a": "m4a",
+    "audio/m4a": "m4a",
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "audio/ogg": "ogg",
+    "audio/oga": "oga",
+    "audio/flac": "flac"
+}
+
 @app.post("/api/audio")
 async def recognize_from_audio(file: UploadFile = File(...)):
-    """
-    多设备音频上传兼容接口（无 ffmpeg）：
-    - 支持 .webm, .mp4, .m4a（iPhone）, .aac
-    - 自动判断 MIME 类型
-    - 发送至 OpenAI Whisper 进行识别
-    - 返回 text_parse 的结构
-    """
     try:
-        # 1️⃣ 读取音频内容
         audio_bytes = await file.read()
         print("📦 文件大小:", len(audio_bytes), "bytes")
 
@@ -548,24 +625,26 @@ async def recognize_from_audio(file: UploadFile = File(...)):
         if len(audio_bytes) > 2 * 1024 * 1024:
             raise HTTPException(status_code=413, detail="音频文件过大（建议小于2MB）")
 
-        # 2️⃣ 检测真实 MIME 类型
         real_mime = file.content_type
         print("📦 实际 MIME 类型:", real_mime)
 
-        # 3️⃣ 设置上传给 Whisper 的 MIME 和文件名
-        if real_mime in ["audio/mp4", "video/mp4", "audio/aac", "audio/x-m4a", "audio/m4a"]:
+        # 根据 MIME 类型判断文件扩展名
+        if real_mime not in SUPPORTED_MIME_MAP:
+            print(f"⚠️ 未知 MIME 类型 {real_mime}，强制设为 m4a")
+            file_ext = "m4a"
             filename = "audio.m4a"
             whisper_mime = "audio/m4a"
         else:
-            filename = "audio.webm"
-            whisper_mime = "audio/webm"
+            file_ext = SUPPORTED_MIME_MAP[real_mime]
+            filename = f"audio.{file_ext}"
+            whisper_mime = f"audio/{file_ext}"
 
-        # 4️⃣ Whisper API 请求
-        openai_api_key = "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"  # ❗请替换为你的有效 OpenAI API key
+        # 发送 Whisper 请求
+        openai_api_key = "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"  # 🔐 替换为你自己的 key
         resp = requests.post(
             "https://api.openai.com/v1/audio/transcriptions",
             headers={"Authorization": f"Bearer {openai_api_key}"},
-            files={"file": (filename, audio_bytes, whisper_mime)},
+            files={"file": (filename, audio_bytes, real_mime)},
             data={"model": "whisper-1", "language": "en"},
             timeout=15
         )
@@ -576,11 +655,9 @@ async def recognize_from_audio(file: UploadFile = File(...)):
         if resp.status_code != 200:
             raise HTTPException(status_code=resp.status_code, detail=resp.text)
 
-        # 5️⃣ 提取 Whisper 返回的文本
         recognized_text = resp.json().get("text", "")
         print("[🎤 Whisper识别结果]:", recognized_text)
 
-        # 6️⃣ 调用 text_parse 返回结构
         return text_parse(TextInput(text=recognized_text))
 
     except Exception as e:
