@@ -364,44 +364,92 @@ async def recognize_from_image(file: UploadFile):
 
 
 
+# @app.post("/api/audio")
+# async def recognize_from_audio(file: UploadFile = File(...)):
+#     try:
+#         # 将上传的 WebM 保存为临时文件
+#         input_path = tempfile.mktemp(suffix=".webm")
+#         output_path = tempfile.mktemp(suffix=".wav")
+
+#         with open(input_path, "wb") as f:
+#             f.write(await file.read())
+
+#         # 使用 ffmpeg 转换为 WAV
+#         subprocess.run(["ffmpeg", "-i", input_path, output_path], check=True)
+
+#         # 调用 Whisper 接口识别文字
+#         openai_api_key = "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"
+#         with open(output_path, "rb") as audio_file:
+#             resp = requests.post(
+#                 "https://api.openai.com/v1/audio/transcriptions",
+#                 headers={"Authorization": f"Bearer {openai_api_key}"},
+#                 files={"file": ("audio.wav", audio_file, "audio/wav")},
+#                 data={"model": "whisper-1", "language": "en"}
+#             )
+
+#         if resp.status_code != 200:
+#             raise HTTPException(status_code=resp.status_code, detail=resp.text)
+
+#         recognized_text = resp.json().get("text", "")
+
+#         print("[🎤 Whisper结果]", recognized_text)
+
+#         # 直接调用轻量解析逻辑（返回 parsedItems）
+#         from pydantic import BaseModel
+#         class TextInput(BaseModel):
+#             text: str
+#         return text_parse(TextInput(text=recognized_text))
+
+#     except Exception as e:
+#         print("[❌ Whisper错误]:", e)
+#         raise HTTPException(status_code=400, detail=str(e))
+
+# ===================== 9) New: /api/audio (Whisper 直接处理 .webm) =====================
+from fastapi import UploadFile, File, HTTPException
+import requests, traceback
+
 @app.post("/api/audio")
 async def recognize_from_audio(file: UploadFile = File(...)):
+    """
+    1) 读取前端上传的 .webm 音频
+    2) 直接上传给 OpenAI Whisper（Whisper 官方支持 webm）
+    3) 将识别文本送入 text_parse，保持返回结构不变
+    """
     try:
-        # 将上传的 WebM 保存为临时文件
-        input_path = tempfile.mktemp(suffix=".webm")
-        output_path = tempfile.mktemp(suffix=".wav")
+        # 1️⃣ 读取 bytes
+        audio_bytes = await file.read()
 
-        with open(input_path, "wb") as f:
-            f.write(await file.read())
+        # 2️⃣ Whisper 语音转文字
+        openai_api_key = (
+            "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"
+        )
 
-        # 使用 ffmpeg 转换为 WAV
-        subprocess.run(["ffmpeg", "-i", input_path, output_path], check=True)
-
-        # 调用 Whisper 接口识别文字
-        openai_api_key = "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"
-        with open(output_path, "rb") as audio_file:
-            resp = requests.post(
-                "https://api.openai.com/v1/audio/transcriptions",
-                headers={"Authorization": f"Bearer {openai_api_key}"},
-                files={"file": ("audio.wav", audio_file, "audio/wav")},
-                data={"model": "whisper-1", "language": "en"}
-            )
+        resp = requests.post(
+            "https://api.openai.com/v1/audio/transcriptions",
+            headers={"Authorization": f"Bearer {openai_api_key}"},
+            files={
+                # filename 任意，MIME 必须 audio/webm
+                "file": ("audio.webm", audio_bytes, "audio/webm")
+            },
+            data={"model": "whisper-1", "language": "en"}
+        )
 
         if resp.status_code != 200:
             raise HTTPException(status_code=resp.status_code, detail=resp.text)
 
         recognized_text = resp.json().get("text", "")
-
         print("[🎤 Whisper结果]", recognized_text)
 
-        # 直接调用轻量解析逻辑（返回 parsedItems）
+        # 3️⃣ 轻量解析 → 返回 parsedItems，与原逻辑一致
         from pydantic import BaseModel
         class TextInput(BaseModel):
             text: str
+
         return text_parse(TextInput(text=recognized_text))
 
     except Exception as e:
         print("[❌ Whisper错误]:", e)
+        traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
 
 # ===================== 10) New: /api/confirm (User-edited Items) =====================
