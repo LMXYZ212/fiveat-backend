@@ -739,7 +739,7 @@ async def recognize_from_audio(file: UploadFile = File(...)):
                 whisper_mime = "audio/webm"
 
         # 3️⃣ 调用 OpenAI Whisper
-        openai_api_key = "sk-你的KEY"
+        openai_api_key = "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"
         resp = requests.post(
             "https://api.openai.com/v1/audio/transcriptions",
             headers={"Authorization": f"Bearer {openai_api_key}"},
