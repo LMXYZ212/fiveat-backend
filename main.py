@@ -588,12 +588,89 @@ async def recognize_from_image(file: UploadFile):
 #         traceback.print_exc()
 #         raise HTTPException(status_code=400, detail=str(e))
 
+# from fastapi import UploadFile, File, HTTPException
+# from pydantic import BaseModel
+# import requests
+# import traceback
+
+# import magic
+
+# SUPPORTED_MIME_MAP = {
+#     "audio/webm": "webm",
+#     "audio/mpeg": "mp3",
+#     "audio/mp3": "mp3",
+#     "audio/mp4": "mp4",
+#     "audio/x-m4a": "m4a",
+#     "audio/m4a": "m4a",
+#     "video/mp4": "mp4",
+#     "audio/aac": "m4a",
+#     "audio/wav": "wav",
+#     "audio/ogg": "ogg",
+#     "audio/oga": "ogg",
+#     "audio/mpga": "mp3",
+#     "audio/flac": "flac"
+# }
+
+# @app.post("/api/audio")
+# async def recognize_from_audio(file: UploadFile = File(...)):
+#     try:
+#         audio_bytes = await file.read()
+#         print("📦 文件大小:", len(audio_bytes), "bytes")
+
+#         if len(audio_bytes) < 500:
+#             raise HTTPException(status_code=400, detail="音频太短或无效")
+#         if len(audio_bytes) > 2 * 1024 * 1024:
+#             raise HTTPException(status_code=413, detail="音频文件过大（建议小于2MB）")
+
+#         # 1️⃣ magic 检测真实 MIME 类型
+#         mime = magic.Magic(mime=True)
+#         real_mime = mime.from_buffer(audio_bytes[:2048])
+#         print("📦 magic 检测 MIME 类型:", real_mime)
+
+#         if real_mime in SUPPORTED_MIME_MAP:
+#             file_ext = SUPPORTED_MIME_MAP[real_mime]
+#             filename = f"audio.{file_ext}"
+#             whisper_mime = f"audio/{file_ext}"
+#         else:
+#             # 强制 fallback 为 webm
+#             print(f"⚠️ 未知 MIME 类型 {real_mime}，强制设为 webm")
+#             filename = "audio.webm"
+#             whisper_mime = "audio/webm"
+
+#         # 2️⃣ Whisper 请求
+#         openai_api_key = "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"  # 替换为你的 key
+#         resp = requests.post(
+#             "https://api.openai.com/v1/audio/transcriptions",
+#             headers={"Authorization": f"Bearer {openai_api_key}"},
+#             files={"file": (filename, audio_bytes, whisper_mime)},
+#             data={"model": "whisper-1", "language": "en"},
+#             timeout=15
+#         )
+
+#         print("📡 Whisper响应码:", resp.status_code)
+#         print("📡 Whisper响应体:", resp.text)
+
+#         if resp.status_code != 200:
+#             raise HTTPException(status_code=resp.status_code, detail=resp.text)
+
+#         recognized_text = resp.json().get("text", "")
+#         print("[🎤 Whisper识别结果]:", recognized_text)
+
+#         return text_parse(TextInput(text=recognized_text))
+
+#     except Exception as e:
+#         print("[❌ Whisper处理异常]:", e)
+#         traceback.print_exc()
+#         raise HTTPException(status_code=400, detail=str(e))
+
 from fastapi import UploadFile, File, HTTPException
 from pydantic import BaseModel
+import tempfile
+import subprocess
 import requests
 import traceback
-
-import magic
+import magic   # python-magic
+# 你的其余 import（nevo_df、vector_match_food、text_parse、TextInput 等）保持不变
 
 SUPPORTED_MIME_MAP = {
     "audio/webm": "webm",
@@ -602,7 +679,7 @@ SUPPORTED_MIME_MAP = {
     "audio/mp4": "mp4",
     "audio/x-m4a": "m4a",
     "audio/m4a": "m4a",
-    "video/mp4": "mp4",
+    "video/mp4": "mp4",            # 识别并单独处理
     "audio/aac": "m4a",
     "audio/wav": "wav",
     "audio/ogg": "ogg",
@@ -627,18 +704,42 @@ async def recognize_from_audio(file: UploadFile = File(...)):
         real_mime = mime.from_buffer(audio_bytes[:2048])
         print("📦 magic 检测 MIME 类型:", real_mime)
 
-        if real_mime in SUPPORTED_MIME_MAP:
-            file_ext = SUPPORTED_MIME_MAP[real_mime]
-            filename = f"audio.{file_ext}"
-            whisper_mime = f"audio/{file_ext}"
-        else:
-            # 强制 fallback 为 webm
-            print(f"⚠️ 未知 MIME 类型 {real_mime}，强制设为 webm")
-            filename = "audio.webm"
-            whisper_mime = "audio/webm"
+        # 2️⃣ video/mp4 -> 转 WAV；其余保持原来逻辑
+        if real_mime == "video/mp4":
+            # 保存临时 mp4
+            tmp_mp4 = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+            tmp_mp4.write(audio_bytes)
+            tmp_mp4.close()
 
-        # 2️⃣ Whisper 请求
-        openai_api_key = "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"  # 替换为你的 key
+            # 转码为单声道 16 kHz WAV
+            tmp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+            tmp_wav.close()
+
+            print("🔄 ffmpeg 转码 video/mp4 → wav")
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", tmp_mp4.name, "-vn",
+                 "-ar", "16000", "-ac", "1", tmp_wav.name],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            with open(tmp_wav.name, "rb") as f:
+                audio_bytes = f.read()
+            filename = "converted.wav"
+            whisper_mime = "audio/wav"
+        else:
+            # 其余格式沿用原来逻辑
+            if real_mime in SUPPORTED_MIME_MAP:
+                ext = SUPPORTED_MIME_MAP[real_mime]
+                filename = f"audio.{ext}"
+                whisper_mime = f"audio/{ext}"
+            else:
+                print(f"⚠️ 未知 MIME 类型 {real_mime}，强制设为 webm")
+                filename = "audio.webm"
+                whisper_mime = "audio/webm"
+
+        # 3️⃣ 调用 OpenAI Whisper
+        openai_api_key = "sk-你的KEY"
         resp = requests.post(
             "https://api.openai.com/v1/audio/transcriptions",
             headers={"Authorization": f"Bearer {openai_api_key}"},
