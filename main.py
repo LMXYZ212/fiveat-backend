@@ -47,7 +47,7 @@ NEVO_FILE = os.path.join(base_dir, "NEVO2023_database.xlsx")
 
 # 尝试读取
 try:
-    nevo_df = pd.read_excel(NEVO_FILE)
+    nevo_df = pd.read_excel(NEVO_FILE, engine="openpyxl")
     nevo_df.columns = [c.strip() for c in nevo_df.columns]
 except FileNotFoundError as e:
     raise RuntimeError(f"未找到 NEVO Excel 文件，请确保 'NEVO2023_database.xlsx' 与 main.py 位于同一目录下。") from e
