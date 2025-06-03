@@ -10,4 +10,4 @@ transformers==4.50.3
 requests==2.31.0
 python-multipart==0.0.20
 python-magic==0.4.27
-openpyxl
+
